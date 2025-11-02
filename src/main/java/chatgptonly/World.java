@@ -16,6 +16,11 @@ public class World {
         this.dynamicEntities = new ArrayList<>();
 
         tileMap.generateBasicTerrain(); // трава, руда, стены и т.д.
+
+        // NEW: один воин для демонстрации (в центре карты)
+        double startX = (width / 2.0) * GameApp.TILE_SIZE + 0.5 * GameApp.TILE_SIZE;
+        double startY = (height / 2.0) * GameApp.TILE_SIZE + 0.5 * GameApp.TILE_SIZE;
+        dynamicEntities.add(new Warrior(startX, startY));
     }
 
     public TileMap getTileMap() {
@@ -45,6 +50,16 @@ public class World {
                 it.remove();
             }
         }
+    }
+
+    // Утилита: найти первого воина под курсором (если щёлкнули по нему)
+    public Warrior findWarriorAt(double worldX, double worldY) {
+        for (Entity e : dynamicEntities) {
+            if (e instanceof Warrior w && w.containsPoint(worldX, worldY)) {
+                return w;
+            }
+        }
+        return null;
     }
 
     // вызывается из GameApp по клику игрока

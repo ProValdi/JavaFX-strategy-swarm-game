@@ -56,7 +56,7 @@ public class GameApp extends Application {
     private Color hoverColor = Color.TRANSPARENT;
 
     private Building selectedBuilding = null; // NEW
-
+    private Warrior selectedWarrior = null;
 
 
 
@@ -174,53 +174,135 @@ public class GameApp extends Application {
         });
 
         scene.setOnMouseClicked(e -> {
-            double mx = e.getSceneX();
-            double my = e.getSceneY();
+            double mx = e.getSceneX(), my = e.getSceneY();
 
-            // 1) Сначала — меню справа (uiCanvas)
+            // 1) Меню справа — без изменений
             PlaceMode picked = hitTestMenu(mx, my);
-            if (picked != null && e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
+            if (picked != null && e.getButton() == MouseButton.PRIMARY) {
                 placeMode = picked;
                 selectedBuilding = null;
-                // обновим UI сразу
-                renderUI(gcUI);
-                return; // не обрабатываем мир
-            }
-
-            if (e.getButton() == MouseButton.SECONDARY) {
-                // Правой кнопкой выключаем режим строительства
-                placeMode = PlaceMode.NONE;
-                // опционально: убрать призрак
-                hoverTileX = hoverTileY = -1;
-                hoverColor = Color.TRANSPARENT;
+                if (selectedWarrior != null) { selectedWarrior.setSelected(false); selectedWarrior = null; }
                 renderUI(gcUI);
                 return;
             }
 
-            // 3) Клик по миру — только если ЛКМ и не попали в меню
-            if (e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
-                var p = worldLayer.sceneToLocal(mx, my);
-                int tileX = (int)(p.getX() / TILE_SIZE);
-                int tileY = (int)(p.getY() / TILE_SIZE);
+            // 2) Преобразуем координаты клика в мировые
+            var p = worldLayer.sceneToLocal(mx, my);
+            double wx = p.getX();
+            double wy = p.getY();
+            int tx = (int)(wx / TILE_SIZE);
+            int ty = (int)(wy / TILE_SIZE);
 
-                boolean placed = switch (placeMode) {
-                    case DRILL    -> world.placeDrill(tileX, tileY);
-                    case HEAT_GEN -> world.placeHeatGenerator(tileX, tileY);
-                    case BARRACKS -> world.placeBarracks(tileX, tileY); // NEW
-                    case NONE     -> false;
-                };
-
-                if (placed) {
-                    selectedBuilding = null;     // строим — снимаем выбор
-                    needsStaticRedraw = true;
+            if (e.getButton() == MouseButton.SECONDARY) {
+                // ПКМ: приказ для юнита, если выбран
+                if (selectedWarrior != null) {
+                    selectedWarrior.moveTo(wx, wy);
                 } else {
-                    // НЕ построили — пробуем выбрать постройку под курсором
-                    Building b = world.getBuildingMap().get(tileX, tileY);
-                    selectedBuilding = b;
-                    // (можно расширить на выбор любых зданий позже)
+                    // иначе — отключаем режим строительства
+                    placeMode = PlaceMode.NONE;
+                    hoverTileX = hoverTileY = -1;
+                    hoverColor = javafx.scene.paint.Color.TRANSPARENT;
+                    renderUI(gcUI);
+                }
+                return;
+            }
+
+            if (e.getButton() == MouseButton.PRIMARY) {
+                // ЛКМ
+                if (placeMode != PlaceMode.NONE) {
+                    boolean placed = switch (placeMode) {
+                        case DRILL    -> world.placeDrill(tx, ty);
+                        case HEAT_GEN     -> world.placeHeatGenerator(tx, ty);
+                        case BARRACKS -> world.placeBarracks(tx, ty);
+                        case NONE     -> false;
+                    };
+                    if (placed) {
+                        selectedBuilding = null;
+                        if (selectedWarrior != null) { selectedWarrior.setSelected(false); selectedWarrior = null; }
+                        needsStaticRedraw = true;
+                    } else {
+                        // Не удалось построить — пробуем выбрать воина
+                        Warrior hit = world.findWarriorAt(wx, wy);
+                        if (hit != null) {
+                            // снять прошлое выделение
+                            if (selectedWarrior != null) selectedWarrior.setSelected(false);
+                            selectedWarrior = hit;
+                            selectedWarrior.setSelected(true);
+                            selectedBuilding = null; // панель бараков не нужна
+                        } else {
+                            // если по воину не попали — оставим выбор построек (как раньше)
+                            Building b = world.getBuildingMap().get(tx, ty);
+                            selectedBuilding = (b != null) ? b : null;
+                            if (selectedWarrior != null) { selectedWarrior.setSelected(false); selectedWarrior = null; }
+                        }
+                    }
+                    return;
+                } else {
+                    // Режим строительства выключен → чистый режим выбора
+                    Warrior hit = world.findWarriorAt(wx, wy);
+                    if (hit != null) {
+                        if (selectedWarrior != null) selectedWarrior.setSelected(false);
+                        selectedWarrior = hit;
+                        selectedWarrior.setSelected(true);
+                        selectedBuilding = null;
+                    } else {
+                        Building b = world.getBuildingMap().get(tx, ty);
+                        selectedBuilding = (b != null) ? b : null;
+                        if (selectedWarrior != null) { selectedWarrior.setSelected(false); selectedWarrior = null; }
+                    }
                 }
             }
         });
+
+//        scene.setOnMouseClicked(e -> {
+//            double mx = e.getSceneX();
+//            double my = e.getSceneY();
+//
+//            // 1) Сначала — меню справа (uiCanvas)
+//            PlaceMode picked = hitTestMenu(mx, my);
+//            if (picked != null && e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
+//                placeMode = picked;
+//                selectedBuilding = null;
+//                // обновим UI сразу
+//                renderUI(gcUI);
+//                return; // не обрабатываем мир
+//            }
+//
+//            if (e.getButton() == MouseButton.SECONDARY) {
+//                // Правой кнопкой выключаем режим строительства
+//                placeMode = PlaceMode.NONE;
+//                // опционально: убрать призрак
+//                hoverTileX = hoverTileY = -1;
+//                hoverColor = Color.TRANSPARENT;
+//                renderUI(gcUI);
+//                return;
+//            }
+//
+//            // 3) Клик по миру — только если ЛКМ и не попали в меню
+//            if (e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
+//                var p = worldLayer.sceneToLocal(mx, my);
+//                int tileX = (int)(p.getX() / TILE_SIZE);
+//                int tileY = (int)(p.getY() / TILE_SIZE);
+//
+//                boolean placed = switch (placeMode) {
+//                    case DRILL    -> world.placeDrill(tileX, tileY);
+//                    case HEAT_GEN -> world.placeHeatGenerator(tileX, tileY);
+//                    case BARRACKS -> world.placeBarracks(tileX, tileY); // NEW
+//                    case NONE     -> false;
+//                };
+//
+//                if (placed) {
+//                    selectedBuilding = null;     // строим — снимаем выбор
+//                    needsStaticRedraw = true;
+//                } else {
+//                    // НЕ построили — пробуем выбрать постройку под курсором
+//                    Building b = world.getBuildingMap().get(tileX, tileY);
+//                    selectedBuilding = b;
+//                    // (можно расширить на выбор любых зданий позже)
+//                }
+//            }
+//        });
+
 
         scene.setOnMouseMoved(e -> {
             double mx = e.getSceneX(), my = e.getSceneY();

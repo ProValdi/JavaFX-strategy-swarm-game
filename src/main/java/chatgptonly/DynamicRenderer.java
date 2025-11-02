@@ -24,6 +24,10 @@ public class DynamicRenderer {
             b.renderDynamic(gc, tileSize);
         }
 
+        for (Entity e : world.getDynamicEntities()) {
+            e.render(gc);
+        }
+
         // 1️⃣ «призрак» блока под курсором
         if (placeMode != NONE && hoverTileX >= 0 && hoverTileY >= 0) {
             int w = 1, h = 1;
