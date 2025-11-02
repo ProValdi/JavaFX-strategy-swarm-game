@@ -12,7 +12,8 @@ public class DynamicRenderer {
     // вызывается каждый кадр
     public void redrawDynamic(GraphicsContext gc, World world, int tileSize,
                               int hoverTileX, int hoverTileY, Color hoverColor,
-                              PlaceMode placeMode, Building selected) {
+                              PlaceMode placeMode, Building selected,
+                              Boolean draggingSelect, double dragStartWX, double dragStartWY, double dragNowWX, double dragNowWY) {
 
         // очистка слоя
         gc.clearRect(0, 0,
@@ -46,6 +47,18 @@ public class DynamicRenderer {
         if (selected instanceof Barracks) {
             drawBarracksPanel(gc);
         }
+
+        // полупрозрачная рамка выделения (в мировых координатах, т.к. dynamicCanvas трансформирован камерой)
+        if (draggingSelect) {
+            double x = Math.min(dragStartWX, dragNowWX);
+            double y = Math.min(dragStartWY, dragNowWY);
+            double w = Math.abs(dragNowWX - dragStartWX);
+            double h = Math.abs(dragNowWY - dragStartWY);
+            gc.setFill(javafx.scene.paint.Color.color(0.2, 0.6, 1.0, 0.2));
+            gc.fillRect(x, y, w, h);
+            gc.setStroke(javafx.scene.paint.Color.color(0.2, 0.6, 1.0, 0.8));
+            gc.strokeRect(x, y, w, h);
+        }
     }
 
     private void drawHud(GraphicsContext gc, PlaceMode mode) {
@@ -63,14 +76,27 @@ public class DynamicRenderer {
 
     private void drawBarracksPanel(GraphicsContext gc) {
         double x = GameApp.SCREEN_W - 180;
-        double y = 110;                 // сразу под HUD
-        double w = 170, h = 60;
+        double y = 110;
+        double w = 170, h = 90;
 
         gc.setFill(Color.color(0,0,0,0.4));
         gc.fillRect(x, y, w, h);
 
         gc.setFill(Color.WHITE);
         gc.setFont(Font.font("Consolas", 16));
-        gc.fillText("доступно для найма", x + 10, y + 35);
+        gc.fillText("доступно для найма", x + 10, y + 28);
+
+        // Кнопка "Нанять"
+        double bx = x + 15, by = y + 45;
+        gc.setFill(Color.color(0.2,0.6,1.0,0.8));
+        gc.fillRect(bx, by, BTN_W, BTN_H);
+        gc.setStroke(Color.WHITE);
+        gc.strokeRect(bx, by, BTN_W, BTN_H);
+        gc.setFill(Color.WHITE);
+        gc.setFont(Font.font("Consolas", 14));
+        gc.fillText("Нанять", bx + 45, by + 19);
     }
+
+    private static final double BTN_W = 140, BTN_H = 28;
+
 }

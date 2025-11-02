@@ -17,6 +17,11 @@ public class TileMap {
         this.tiles = new int[width][height];
     }
 
+    public boolean isWalkable(int tx, int ty) {
+        if (!inBounds(tx, ty)) return false;
+        return getTile(tx, ty) != TILE_WALL; // можно расширить (например, запретить лаву)
+    }
+
     public void generateBasicTerrain() {
         // Пример: стены по периметру, трава внутри, пятно руды
         for (int x = 0; x < width; x++) {

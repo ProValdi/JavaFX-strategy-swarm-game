@@ -38,19 +38,22 @@ public class Warrior implements Entity {
         double dx = targetX - x;
         double dy = targetY - y;
         double dist = Math.hypot(dx, dy);
-        if (dist < 1e-3) { // достигли
-            x = targetX; y = targetY;
+        if (dist < 1e-3) { x = targetX; y = targetY; targetX = targetY = null; return; }
+
+        double step = speed * dt;
+        double nx = (step >= dist) ? targetX : x + dx / dist * step;
+        double ny = (step >= dist) ? targetY : y + dy / dist * step;
+
+        // тайл целевой позиции
+        int ntx = (int)Math.floor(nx / GameApp.TILE_SIZE);
+        int nty = (int)Math.floor(ny / GameApp.TILE_SIZE);
+
+        if (world.isBlocked(ntx, nty)) {
+            // блок — останавливаемся (простое поведение)
             targetX = targetY = null;
             return;
         }
-        double step = speed * dt;
-        if (step >= dist) {
-            x = targetX; y = targetY;
-            targetX = targetY = null;
-        } else {
-            x += dx / dist * step;
-            y += dy / dist * step;
-        }
+        x = nx; y = ny;
     }
 
     @Override

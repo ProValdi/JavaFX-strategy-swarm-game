@@ -35,6 +35,11 @@ public class World {
         return dynamicEntities;
     }
 
+    public boolean isBlocked(int tx, int ty) {
+        if (!tileMap.isWalkable(tx, ty)) return true;
+        return buildingMap.get(tx, ty) != null; // плитка занята постройкой
+    }
+
     public void update(double dt) {
         // обновляем здания (их внутреннюю экономику)
         for (Building b : buildingMap.all()) {
@@ -50,6 +55,28 @@ public class World {
                 it.remove();
             }
         }
+    }
+
+    public void spawnWarriorNear(Barracks b) {
+        // Кольцо вокруг 2x2 бараков: попробуем найти ближайший проходимый тайл
+        int ox = b.getTileX(), oy = b.getTileY();
+
+        java.util.List<int[]> ring = new java.util.ArrayList<>();
+        // сверху и снизу
+        for (int x = ox-1; x <= ox+2; x++) { ring.add(new int[]{x, oy-1}); ring.add(new int[]{x, oy+2}); }
+        // слева и справа
+        for (int y = oy; y <= oy+1; y++) { ring.add(new int[]{ox-1, y}); ring.add(new int[]{ox+2, y}); }
+
+        for (int[] t : ring) {
+            int tx = t[0], ty = t[1];
+            if (!tileMap.inBounds(tx, ty)) continue;
+            if (isBlocked(tx, ty)) continue; // стена или здание
+            double wx = tx * GameApp.TILE_SIZE + GameApp.TILE_SIZE * 0.5;
+            double wy = ty * GameApp.TILE_SIZE + GameApp.TILE_SIZE * 0.5;
+            dynamicEntities.add(new Warrior(wx, wy));
+            return;
+        }
+        // если все занято — можно вывести сообщение/ничего не делать
     }
 
     // Утилита: найти первого воина под курсором (если щёлкнули по нему)

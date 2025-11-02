@@ -5,6 +5,7 @@ module provaldi.self.towerdefensejavafx {
     requires org.controlsfx.controls;
     requires com.dlsc.formsfx;
     requires static lombok;
+    requires java.xml;
 
     opens provaldi.self.tower.defense.javafx to javafx.fxml;
     opens provaldi.self.tower.defense.javafx.view.panes.gamefield to javafx.fxml;

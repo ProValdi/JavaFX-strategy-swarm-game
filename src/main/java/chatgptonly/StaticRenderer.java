@@ -36,6 +36,10 @@ public class StaticRenderer {
             }
         }
 
+        gc.setStroke(Color.YELLOW);
+        gc.strokeRect(GameApp.SCREEN_W - 180 + 15, 110 + 45, 140, 28);
+
+
         // 2. Рисуем статические части зданий
         for (Building b : world.getBuildingMap().all()) {
             b.renderStatic(gc, GameApp.TILE_SIZE);

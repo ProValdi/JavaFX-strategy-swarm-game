@@ -12,6 +12,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.transform.Scale;
 import javafx.scene.transform.Translate;
 import javafx.stage.Stage;
+import org.w3c.dom.ls.LSOutput;
 
 public class GameApp extends Application {
 
@@ -88,7 +89,14 @@ public class GameApp extends Application {
             new MenuItem(PlaceMode.BARRACKS, "Barracks (бараки)",   2, 2)
     );
 
+    // Выделение воинов
+    private final java.util.LinkedHashSet<Warrior> selectedWarriors = new java.util.LinkedHashSet<>();
+    private boolean draggingSelect = false;
+    private double dragStartWX, dragStartWY; // мировые коорд. начала
+    private double dragNowWX,   dragNowWY;   // мировые коорд. текущей точки
 
+    private final javafx.geometry.Rectangle2D hireBtnBounds =
+            new javafx.geometry.Rectangle2D(SCREEN_W - 180 + 15, 110 + 45, 140, 28);
 
     @Override
     public void start(Stage stage) {
@@ -185,6 +193,20 @@ public class GameApp extends Application {
                 renderUI(gcUI);
                 return;
             }
+            System.out.println(selectedBuilding);
+
+            // Если открыт панель Barracks — ловим клик по кнопке
+            if (selectedBuilding instanceof Barracks
+                    && e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
+
+                if (hireBtnBounds.contains(e.getSceneX(), e.getSceneY())) {
+                    world.spawnWarriorNear((Barracks) selectedBuilding);
+                    // Снимем выделение зданий и перерисуем UI (необязательно)
+                    renderUI(gcUI);
+                    System.out.println("hellodddd");
+                    return;
+                }
+            }
 
             // 2) Преобразуем координаты клика в мировые
             var p = worldLayer.sceneToLocal(mx, my);
@@ -194,6 +216,12 @@ public class GameApp extends Application {
             int ty = (int)(wy / TILE_SIZE);
 
             if (e.getButton() == MouseButton.SECONDARY) {
+
+                if (!selectedWarriors.isEmpty()) {
+                    for (var w : selectedWarriors) w.moveTo(wx, wy);
+                    return;
+                }
+
                 // ПКМ: приказ для юнита, если выбран
                 if (selectedWarrior != null) {
                     selectedWarrior.moveTo(wx, wy);
@@ -251,6 +279,72 @@ public class GameApp extends Application {
                         if (selectedWarrior != null) { selectedWarrior.setSelected(false); selectedWarrior = null; }
                     }
                 }
+            }
+        });
+
+        // Нажатие ЛКМ — старт рамки, если не в режиме строительства и не по меню
+        scene.setOnMousePressed(e -> {
+            if (e.getButton() != javafx.scene.input.MouseButton.PRIMARY) return;
+
+            double mx = e.getSceneX(), my = e.getSceneY();
+            // если клик попал в правое меню — игнор (там уже есть логика)
+            if (mx >= MENU_X && mx <= SCREEN_W && my >= MENU_Y) return;
+            // в режиме строительства ЛКМ занимается постройкой — рамку не стартуем
+            if (placeMode != PlaceMode.NONE) return;
+
+            var p = worldLayer.sceneToLocal(mx, my);
+            draggingSelect = true;
+            dragStartWX = dragNowWX = p.getX();
+            dragStartWY = dragNowWY = p.getY();
+        });
+
+        scene.setOnMouseDragged(e -> {
+            if (!draggingSelect) return;
+            var p = worldLayer.sceneToLocal(e.getSceneX(), e.getSceneY());
+            dragNowWX = p.getX();
+            dragNowWY = p.getY();
+        });
+
+        scene.setOnMouseReleased(e -> {
+            if (e.getButton() != javafx.scene.input.MouseButton.PRIMARY) return;
+            if (!draggingSelect) return;
+            draggingSelect = false;
+
+            double x1 = Math.min(dragStartWX, dragNowWX);
+            double y1 = Math.min(dragStartWY, dragNowWY);
+            double x2 = Math.max(dragStartWX, dragNowWX);
+            double y2 = Math.max(dragStartWY, dragNowWY);
+
+            // Тап без драгга — пороговое окно 6 пикселей: считаем как одиночный клик (снимем/поставим выбор)
+            boolean tiny = (Math.hypot(x2-x1, y2-y1) < 6);
+
+            // очистим прошлый выбор
+            for (var w : selectedWarriors) w.setSelected(false);
+            selectedWarriors.clear();
+
+            if (tiny) {
+                // одиночный выбор воина под курсором (если есть)
+                Warrior hit = world.findWarriorAt(dragNowWX, dragNowWY);
+                if (hit != null) {
+                    hit.setSelected(true);
+                    selectedWarriors.add(hit);
+                } else {
+                    // можно тут же попробовать выбрать здание, если нужно
+                    int tx = (int)(dragNowWX / TILE_SIZE), ty = (int)(dragNowWY / TILE_SIZE);
+                    selectedBuilding = world.getBuildingMap().get(tx, ty);
+                }
+            } else {
+                // прямоугольник — мультивыделение
+                for (var e1 : world.getDynamicEntities()) {
+                    if (e1 instanceof Warrior w) {
+                        double wx = w.getX(), wy = w.getY();
+                        if (wx >= x1 && wx <= x2 && wy >= y1 && wy <= y2) {
+                            w.setSelected(true);
+                            selectedWarriors.add(w);
+                        }
+                    }
+                }
+                selectedBuilding = null;
             }
         });
 
@@ -410,7 +504,9 @@ public class GameApp extends Application {
 
         // 2) динамику — каждый кадр
         dynamicRenderer.redrawDynamic(gcDynamic, world, TILE_SIZE,
-                hoverTileX, hoverTileY, hoverColor, placeMode, selectedBuilding);
+                hoverTileX, hoverTileY, hoverColor, placeMode, selectedBuilding,
+                draggingSelect, dragStartWX, dragStartWY, dragNowWX, dragNowWY
+        );
     }
 
     public static void main(String[] args) {
