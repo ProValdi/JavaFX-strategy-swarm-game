@@ -21,4 +21,6 @@ module provaldi.self.towerdefensejavafx {
     exports provaldi.self.tower.defense.javafx.view.model.interfaces;
     exports provaldi.self.tower.defense.javafx.view.model.entities;
     opens provaldi.self.tower.defense.javafx.view.panes to javafx.fxml;
+
+    exports chatgptonly;
 }
