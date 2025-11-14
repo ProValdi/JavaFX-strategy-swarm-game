@@ -24,4 +24,8 @@ module provaldi.self.towerdefensejavafx {
     opens provaldi.self.tower.defense.javafx.view.panes to javafx.fxml;
 
     exports chatgptonly;
+    exports chatgptonly.entities.units;
+    exports chatgptonly.entities.buildings;
+    exports chatgptonly.terrain;
+    exports chatgptonly.graphics;
 }

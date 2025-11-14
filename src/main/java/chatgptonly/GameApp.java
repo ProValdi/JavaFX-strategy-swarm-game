@@ -1,30 +1,43 @@
 package chatgptonly;
 
+import chatgptonly.entities.buildings.PlaceMode;
+import chatgptonly.entities.buildings.Barracks;
+import chatgptonly.entities.buildings.Building;
+import chatgptonly.entities.units.Warrior;
+import chatgptonly.graphics.DynamicRenderer;
+import chatgptonly.graphics.StaticRenderer;
+import chatgptonly.logic.GameLoop;
+import chatgptonly.panels.MenuPanel;
+import chatgptonly.terrain.World;
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.Group;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.input.MouseButton;
+import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
+import javafx.scene.text.Font;
 import javafx.scene.transform.Scale;
 import javafx.scene.transform.Translate;
 import javafx.stage.Stage;
-import org.w3c.dom.ls.LSOutput;
+
+import java.util.LinkedHashSet;
+import java.util.List;
+
+import static chatgptonly.constants.WorldConstants.*;
 
 public class GameApp extends Application {
-
-    public static final double SCREEN_W = 1280;
-    public static final double SCREEN_H = 1100;
-    public static final int TILE_SIZE = 32;
 
     private Canvas staticCanvas;
     private Canvas dynamicCanvas;
 
     private GraphicsContext gcStatic;
     private GraphicsContext gcDynamic;
+    private GraphicsContext gcUI;
 
     private World world;
     private StaticRenderer staticRenderer;
@@ -44,9 +57,6 @@ public class GameApp extends Application {
 
     private boolean up, down, left, right;
 
-    // для dt
-    private long lastTimeNs = 0;
-
     private PlaceMode placeMode = PlaceMode.NONE;
 
     // положение курсора в мире (в тайлах)
@@ -58,51 +68,38 @@ public class GameApp extends Application {
 
     private Building selectedBuilding = null; // NEW
     private Warrior selectedWarrior = null;
-
-
+    MenuPanel menuPanel = new MenuPanel();
 
     // Параметры меню справа
     private static final double MENU_W = 220;  // ширина панели
     private static final double MENU_X = SCREEN_W - MENU_W;
     private static final double MENU_Y = 10;
-    private static final double MENU_PAD = 10;
-
-    // Размер ячейки сетки под иконку здания
-// Должен влезть самый крупный блок (2x2)
-    private static final double CELL_W = 2 * TILE_SIZE + 16;
-    private static final double CELL_H = 2 * TILE_SIZE + 30; // + место под подпись
-    private static final int GRID_COLS = 1; // по одному столбцу (можешь сделать 2)
-
-
-    private static class MenuItem {
-        final PlaceMode mode;
-        final String label;
-        final int wTiles, hTiles;
-        MenuItem(PlaceMode mode, String label, int wTiles, int hTiles) {
-            this.mode = mode; this.label = label; this.wTiles = wTiles; this.hTiles = hTiles;
-        }
-    }
-
-    private final java.util.List<MenuItem> menuItems = java.util.List.of(
-            new MenuItem(PlaceMode.DRILL,    "Drill (бур)",         1, 1),
-            new MenuItem(PlaceMode.HEAT_GEN,     "HeatGen (генератор)", 1, 1),
-            new MenuItem(PlaceMode.BARRACKS, "Barracks (бараки)",   2, 2)
-    );
 
     // Выделение воинов
-    private final java.util.LinkedHashSet<Warrior> selectedWarriors = new java.util.LinkedHashSet<>();
+    private final LinkedHashSet<Warrior> selectedWarriors = new LinkedHashSet<>();
     private boolean draggingSelect = false;
     private double dragStartWX, dragStartWY; // мировые коорд. начала
-    private double dragNowWX,   dragNowWY;   // мировые коорд. текущей точки
+    private double dragNowWX, dragNowWY;   // мировые коорд. текущей точки
 
-    private final javafx.geometry.Rectangle2D hireBtnBounds =
-            new javafx.geometry.Rectangle2D(SCREEN_W - 180 + 15, 110 + 45, 140, 28);
+    private final Rectangle2D hireBtnBounds =
+            new Rectangle2D(SCREEN_W - 180 + 15, 110 + 45, 140, 28);
+
+    private void showHoverIfApplicable() {
+        // проверяем, можем ли ставить блок
+        boolean valid = switch (placeMode) {
+            case DRILL -> world.canPlaceDrill(hoverTileX, hoverTileY);
+            case HEAT_GEN -> world.canPlaceHeatGenerator(hoverTileX, hoverTileY);
+            case BARRACKS -> world.canPlaceBarracks(hoverTileX, hoverTileY); // NEW
+            case NONE -> false;
+        };
+        hoverColor = valid ? Color.color(0, 1, 0, 0.3) : Color.color(1, 0, 0, 0.3);
+    }
 
     @Override
     public void start(Stage stage) {
         // UI-слой (фиксированный, без масштабирования/перемещения)
         Canvas uiCanvas = new Canvas(SCREEN_W, SCREEN_H);
-        GraphicsContext gcUI = uiCanvas.getGraphicsContext2D();
+        gcUI = uiCanvas.getGraphicsContext2D();
 
         // --- init world ---
         world = new World(60, 40); // карта 60 x 40 тайлов
@@ -146,17 +143,8 @@ public class GameApp extends Application {
                     hoverColor = Color.TRANSPARENT;
                 }
             }
-
-            // проверяем, можем ли ставить блок
-            boolean valid = switch (placeMode) {
-                case DRILL -> world.canPlaceDrill(hoverTileX, hoverTileY);
-                case HEAT_GEN -> world.canPlaceHeatGenerator(hoverTileX, hoverTileY);
-                case BARRACKS -> world.canPlaceBarracks(hoverTileX, hoverTileY); // NEW
-                case NONE     -> false;
-            };
-            hoverColor = valid ? Color.color(0, 1, 0, 0.3) : Color.color(1, 0, 0, 0.3);
+            showHoverIfApplicable();
         });
-
         scene.setOnKeyReleased(e -> {
             switch (e.getCode()) {
                 case W, UP -> up = false;
@@ -166,7 +154,7 @@ public class GameApp extends Application {
             }
         });
         scene.setOnScroll(e -> {
-            double factor = (e.getDeltaY() > 0) ? 1.1 : 1/1.1;
+            double factor = (e.getDeltaY() > 0) ? 1.1 : 1 / 1.1;
             double newScale = Math.max(0.4, Math.min(3.0, cameraScale * factor));
 
             // мировая точка под курсором в локальных координатах worldLayer:
@@ -178,42 +166,32 @@ public class GameApp extends Application {
 
             cameraScale = newScale;
             applyCameraTransform();
-            //needsStaticRedraw = true;
         });
 
         scene.setOnMouseClicked(e -> {
+            System.out.println("scene mouse clicked");
             double mx = e.getSceneX(), my = e.getSceneY();
 
             // 1) Меню справа — без изменений
             PlaceMode picked = hitTestMenu(mx, my);
             if (picked != null && e.getButton() == MouseButton.PRIMARY) {
                 placeMode = picked;
-                selectedBuilding = null;
-                if (selectedWarrior != null) { selectedWarrior.setSelected(false); selectedWarrior = null; }
+                //selectedBuilding = null;
+                if (selectedWarrior != null) {
+                    selectedWarrior.setSelected(false);
+                    selectedWarrior = null;
+                }
                 renderUI(gcUI);
                 return;
             }
-            System.out.println(selectedBuilding);
-
-            // Если открыт панель Barracks — ловим клик по кнопке
-            if (selectedBuilding instanceof Barracks
-                    && e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
-
-                if (hireBtnBounds.contains(e.getSceneX(), e.getSceneY())) {
-                    world.spawnWarriorNear((Barracks) selectedBuilding);
-                    // Снимем выделение зданий и перерисуем UI (необязательно)
-                    renderUI(gcUI);
-                    System.out.println("hellodddd");
-                    return;
-                }
-            }
+            //System.out.println(selectedBuilding);
 
             // 2) Преобразуем координаты клика в мировые
             var p = worldLayer.sceneToLocal(mx, my);
             double wx = p.getX();
             double wy = p.getY();
-            int tx = (int)(wx / TILE_SIZE);
-            int ty = (int)(wy / TILE_SIZE);
+            int tx = (int) (wx / TILE_SIZE);
+            int ty = (int) (wy / TILE_SIZE);
 
             if (e.getButton() == MouseButton.SECONDARY) {
 
@@ -229,7 +207,7 @@ public class GameApp extends Application {
                     // иначе — отключаем режим строительства
                     placeMode = PlaceMode.NONE;
                     hoverTileX = hoverTileY = -1;
-                    hoverColor = javafx.scene.paint.Color.TRANSPARENT;
+                    hoverColor = Color.TRANSPARENT;
                     renderUI(gcUI);
                 }
                 return;
@@ -239,14 +217,17 @@ public class GameApp extends Application {
                 // ЛКМ
                 if (placeMode != PlaceMode.NONE) {
                     boolean placed = switch (placeMode) {
-                        case DRILL    -> world.placeDrill(tx, ty);
-                        case HEAT_GEN     -> world.placeHeatGenerator(tx, ty);
+                        case DRILL -> world.placeDrill(tx, ty);
+                        case HEAT_GEN -> world.placeHeatGenerator(tx, ty);
                         case BARRACKS -> world.placeBarracks(tx, ty);
-                        case NONE     -> false;
+                        case NONE -> false;
                     };
                     if (placed) {
                         selectedBuilding = null;
-                        if (selectedWarrior != null) { selectedWarrior.setSelected(false); selectedWarrior = null; }
+                        if (selectedWarrior != null) {
+                            selectedWarrior.setSelected(false);
+                            selectedWarrior = null;
+                        }
                         needsStaticRedraw = true;
                     } else {
                         // Не удалось построить — пробуем выбрать воина
@@ -261,7 +242,10 @@ public class GameApp extends Application {
                             // если по воину не попали — оставим выбор построек (как раньше)
                             Building b = world.getBuildingMap().get(tx, ty);
                             selectedBuilding = (b != null) ? b : null;
-                            if (selectedWarrior != null) { selectedWarrior.setSelected(false); selectedWarrior = null; }
+                            if (selectedWarrior != null) {
+                                selectedWarrior.setSelected(false);
+                                selectedWarrior = null;
+                            }
                         }
                     }
                     return;
@@ -276,7 +260,10 @@ public class GameApp extends Application {
                     } else {
                         Building b = world.getBuildingMap().get(tx, ty);
                         selectedBuilding = (b != null) ? b : null;
-                        if (selectedWarrior != null) { selectedWarrior.setSelected(false); selectedWarrior = null; }
+                        if (selectedWarrior != null) {
+                            selectedWarrior.setSelected(false);
+                            selectedWarrior = null;
+                        }
                     }
                 }
             }
@@ -284,18 +271,31 @@ public class GameApp extends Application {
 
         // Нажатие ЛКМ — старт рамки, если не в режиме строительства и не по меню
         scene.setOnMousePressed(e -> {
-            if (e.getButton() != javafx.scene.input.MouseButton.PRIMARY) return;
-
+            System.out.println("scene mouse pressed");
             double mx = e.getSceneX(), my = e.getSceneY();
-            // если клик попал в правое меню — игнор (там уже есть логика)
-            if (mx >= MENU_X && mx <= SCREEN_W && my >= MENU_Y) return;
-            // в режиме строительства ЛКМ занимается постройкой — рамку не стартуем
-            if (placeMode != PlaceMode.NONE) return;
 
-            var p = worldLayer.sceneToLocal(mx, my);
-            draggingSelect = true;
-            dragStartWX = dragNowWX = p.getX();
-            dragStartWY = dragNowWY = p.getY();
+            // 0) Кнопка "Нанять" всегда обрабатывается первой
+            if (e.getButton() == MouseButton.PRIMARY
+                    && selectedBuilding instanceof Barracks
+                    && hireBtnBounds.contains(mx, my)) {
+
+                world.spawnWarriorNear((Barracks) selectedBuilding);
+                // фокус оставляем на бараках (панель остаётся открытой)
+                renderUI(gcUI);
+                e.consume();
+                return;
+            }
+
+            // 1) Рамка выделения — только если ЛКМ, не по меню, и placeMode == NONE
+            if (e.getButton() == MouseButton.PRIMARY) {
+                if (placeMode == PlaceMode.NONE && !(mx >= MENU_X && mx <= SCREEN_W && my >= MENU_Y)) {
+                    var p = worldLayer.sceneToLocal(mx, my);
+                    draggingSelect = true;
+                    dragStartWX = dragNowWX = p.getX();
+                    dragStartWY = dragNowWY = p.getY();
+                    // не трогаем focusedBuilding здесь
+                }
+            }
         });
 
         scene.setOnMouseDragged(e -> {
@@ -306,7 +306,7 @@ public class GameApp extends Application {
         });
 
         scene.setOnMouseReleased(e -> {
-            if (e.getButton() != javafx.scene.input.MouseButton.PRIMARY) return;
+            if (e.getButton() != MouseButton.PRIMARY) return;
             if (!draggingSelect) return;
             draggingSelect = false;
 
@@ -316,7 +316,7 @@ public class GameApp extends Application {
             double y2 = Math.max(dragStartWY, dragNowWY);
 
             // Тап без драгга — пороговое окно 6 пикселей: считаем как одиночный клик (снимем/поставим выбор)
-            boolean tiny = (Math.hypot(x2-x1, y2-y1) < 6);
+            boolean tiny = (Math.hypot(x2 - x1, y2 - y1) < 6);
 
             // очистим прошлый выбор
             for (var w : selectedWarriors) w.setSelected(false);
@@ -330,7 +330,7 @@ public class GameApp extends Application {
                     selectedWarriors.add(hit);
                 } else {
                     // можно тут же попробовать выбрать здание, если нужно
-                    int tx = (int)(dragNowWX / TILE_SIZE), ty = (int)(dragNowWY / TILE_SIZE);
+                    int tx = (int) (dragNowWX / TILE_SIZE), ty = (int) (dragNowWY / TILE_SIZE);
                     selectedBuilding = world.getBuildingMap().get(tx, ty);
                 }
             } else {
@@ -348,109 +348,61 @@ public class GameApp extends Application {
             }
         });
 
-//        scene.setOnMouseClicked(e -> {
-//            double mx = e.getSceneX();
-//            double my = e.getSceneY();
-//
-//            // 1) Сначала — меню справа (uiCanvas)
-//            PlaceMode picked = hitTestMenu(mx, my);
-//            if (picked != null && e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
-//                placeMode = picked;
-//                selectedBuilding = null;
-//                // обновим UI сразу
-//                renderUI(gcUI);
-//                return; // не обрабатываем мир
-//            }
-//
-//            if (e.getButton() == MouseButton.SECONDARY) {
-//                // Правой кнопкой выключаем режим строительства
-//                placeMode = PlaceMode.NONE;
-//                // опционально: убрать призрак
-//                hoverTileX = hoverTileY = -1;
-//                hoverColor = Color.TRANSPARENT;
-//                renderUI(gcUI);
-//                return;
-//            }
-//
-//            // 3) Клик по миру — только если ЛКМ и не попали в меню
-//            if (e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
-//                var p = worldLayer.sceneToLocal(mx, my);
-//                int tileX = (int)(p.getX() / TILE_SIZE);
-//                int tileY = (int)(p.getY() / TILE_SIZE);
-//
-//                boolean placed = switch (placeMode) {
-//                    case DRILL    -> world.placeDrill(tileX, tileY);
-//                    case HEAT_GEN -> world.placeHeatGenerator(tileX, tileY);
-//                    case BARRACKS -> world.placeBarracks(tileX, tileY); // NEW
-//                    case NONE     -> false;
-//                };
-//
-//                if (placed) {
-//                    selectedBuilding = null;     // строим — снимаем выбор
-//                    needsStaticRedraw = true;
-//                } else {
-//                    // НЕ построили — пробуем выбрать постройку под курсором
-//                    Building b = world.getBuildingMap().get(tileX, tileY);
-//                    selectedBuilding = b;
-//                    // (можно расширить на выбор любых зданий позже)
-//                }
-//            }
-//        });
-
-
         scene.setOnMouseMoved(e -> {
             double mx = e.getSceneX(), my = e.getSceneY();
 
             // если курсор над меню — не показываем «призрак» на карте
             if (mx >= MENU_X && mx <= SCREEN_W && my >= MENU_Y) {
                 hoverTileX = hoverTileY = -1;
-                hoverColor = javafx.scene.paint.Color.TRANSPARENT;
+                hoverColor = Color.TRANSPARENT;
                 return;
             }
 
             var p = worldLayer.sceneToLocal(mx, my);
-            hoverTileX = (int)(p.getX() / TILE_SIZE);
-            hoverTileY = (int)(p.getY() / TILE_SIZE);
+            hoverTileX = (int) (p.getX() / TILE_SIZE);
+            hoverTileY = (int) (p.getY() / TILE_SIZE);
 
             if (placeMode == PlaceMode.NONE) {
-                hoverColor = javafx.scene.paint.Color.TRANSPARENT;
+                hoverColor = Color.TRANSPARENT;
                 return;
             }
-
-            boolean valid = switch (placeMode) {
-                case DRILL    -> world.canPlaceDrill(hoverTileX, hoverTileY);
-                case HEAT_GEN -> world.canPlaceHeatGenerator(hoverTileX, hoverTileY);
-                case BARRACKS -> world.canPlaceBarracks(hoverTileX, hoverTileY);
-                case NONE     -> false;
-            };
-            hoverColor = valid ? javafx.scene.paint.Color.color(0,1,0,0.3)
-                    : javafx.scene.paint.Color.color(1,0,0,0.3);
+            showHoverIfApplicable();
         });
 
 
         scene.setOnMouseExited(e -> hoverTileX = hoverTileY = -1);
 
+        GameLoop gameloop = new GameLoop();
+        AnimationTimer loop = gameloop.getMainLoop(dt -> {
+            update(dt);
+            render();
 
-
-        // --- Геймлуп ---
-        AnimationTimer loop = new AnimationTimer() {
-            @Override
-            public void handle(long now) {
-                if (lastTimeNs == 0) {
-                    lastTimeNs = now;
-                    return;
-                }
-                double dt = (now - lastTimeNs) / 1_000_000_000.0;
-                lastTimeNs = now;
-
-                update(dt);
-                render();
-
-                // TODO: удешевить
-                renderUI(gcUI);
-            }
-        };
+            // TODO: удешевить
+            renderUI(gcUI);
+            return null;
+        });
         loop.start();
+    }
+
+    private void pickEntityOrBuilding(double wx, double wy, int tx, int ty) {
+        // мультивыбор уже обрабатывается в MouseReleased, это — одиночный клик
+        Warrior hit = world.findWarriorAt(wx, wy);
+        if (hit != null) {
+            // сбрасываем выделение зданий, фокус не нужен
+            selectedBuilding = null;
+            for (var w : selectedWarriors) w.setSelected(false);
+            selectedWarriors.clear();
+            hit.setSelected(true);
+            selectedWarriors.add(hit);
+            renderUI(gcUI);
+            return;
+        }
+        Building b = world.getBuildingMap().get(tx, ty);
+        selectedBuilding = b; // может быть null — тогда панель исчезнет
+        // юнитов снимаем
+        for (var w : selectedWarriors) w.setSelected(false);
+        selectedWarriors.clear();
+        renderUI(gcUI);
     }
 
     private void applyCameraTransform() {
@@ -469,7 +421,7 @@ public class GameApp extends Application {
         if (left) dx -= 1;
         if (right) dx += 1;
 
-        double len = Math.sqrt(dx*dx + dy*dy);
+        double len = Math.sqrt(dx * dx + dy * dy);
         if (len > 0) {
             dx /= len;
             dy /= len;
@@ -482,17 +434,6 @@ public class GameApp extends Application {
 
         // обновляем модель мира
         world.update(dt);
-
-//        // сдвигаем Canvas-ы, чтобы симулировать камеру
-//        staticCanvas.setTranslateX(-cameraX);
-//        staticCanvas.setTranslateY(-cameraY);
-//        dynamicCanvas.setTranslateX(-cameraX);
-//        dynamicCanvas.setTranslateY(-cameraY);
-
-//        staticCanvas.setScaleX(cameraScale);
-//        staticCanvas.setScaleY(cameraScale);
-//        dynamicCanvas.setScaleX(cameraScale);
-//        dynamicCanvas.setScaleY(cameraScale);
     }
 
     private void render() {
@@ -503,7 +444,7 @@ public class GameApp extends Application {
         }
 
         // 2) динамику — каждый кадр
-        dynamicRenderer.redrawDynamic(gcDynamic, world, TILE_SIZE,
+        dynamicRenderer.redrawDynamic(gcDynamic, world,
                 hoverTileX, hoverTileY, hoverColor, placeMode, selectedBuilding,
                 draggingSelect, dragStartWX, dragStartWY, dragNowWX, dragNowWY
         );
@@ -514,93 +455,10 @@ public class GameApp extends Application {
     }
 
     private PlaceMode hitTestMenu(double mx, double my) {
-        // вне панели — не меню
-        if (mx < MENU_X || mx > SCREEN_W || my < MENU_Y) return null;
-
-        // координаты внутри панели
-        double x = MENU_X + 12;
-        double y = MENU_Y + 40;
-        int col = 0;
-
-        for (MenuItem it : menuItems) {
-            double cellX = x;
-            double cellY = y;
-            if (mx >= cellX && mx <= cellX + CELL_W && my >= cellY && my <= cellY + CELL_H) {
-                return it.mode;
-            }
-
-            col++;
-            if (col >= GRID_COLS) {
-                col = 0;
-                y += CELL_H + 8;
-            } else {
-                x += CELL_W + 8;
-            }
-        }
-        return null;
+        return menuPanel.hitTestMenu(mx, my);
     }
 
     private void renderUI(GraphicsContext gcUI) {
-        // очистка
-        gcUI.clearRect(0, 0, SCREEN_W, SCREEN_H);
-
-        // панель фоном
-        gcUI.setFill(javafx.scene.paint.Color.color(0,0,0,0.35));
-        gcUI.fillRect(MENU_X, MENU_Y, MENU_W - MENU_PAD, SCREEN_H - 2*MENU_Y);
-
-        // заголовок
-        gcUI.setFill(javafx.scene.paint.Color.WHITE);
-        gcUI.setFont(javafx.scene.text.Font.font("Consolas", 18));
-        gcUI.fillText("Постройки", MENU_X + 12, MENU_Y + 26);
-
-        // сетка
-        double startY = MENU_Y + 40;
-        double x = MENU_X + 12;
-        double y = startY;
-
-        int col = 0;
-        for (MenuItem it : menuItems) {
-            // ячейка
-            gcUI.setStroke(javafx.scene.paint.Color.color(1,1,1,0.5));
-            gcUI.strokeRect(x, y, CELL_W, CELL_H);
-
-            // иконка «в натуральную величину»
-            double iconW = it.wTiles * TILE_SIZE;
-            double iconH = it.hTiles * TILE_SIZE;
-
-            // центрируем иконку в ячейке
-            double iconX = x + (CELL_W - iconW) / 2;
-            double iconY = y + 8 + (2 * TILE_SIZE - iconH) / 2; // визуально пониже, чтобы текст влез
-
-            // рисуем упрощённые прямоугольники цветов как в игре
-            javafx.scene.paint.Color body =
-                    (it.mode == PlaceMode.DRILL)    ? javafx.scene.paint.Color.GOLD :
-                            (it.mode == PlaceMode.HEAT_GEN)     ? javafx.scene.paint.Color.FIREBRICK :
-                                    javafx.scene.paint.Color.DODGERBLUE;
-
-            gcUI.setFill(body);
-            gcUI.fillRect(iconX, iconY, iconW, iconH);
-            gcUI.setStroke(javafx.scene.paint.Color.WHITE);
-            gcUI.strokeRect(iconX, iconY, iconW, iconH);
-
-            // подпись
-            gcUI.setFill(javafx.scene.paint.Color.WHITE);
-            gcUI.setFont(javafx.scene.text.Font.font("Consolas", 14));
-            gcUI.fillText(it.label, x + 8, y + CELL_H - 8);
-
-            // следующий элемент
-            col++;
-            if (col >= GRID_COLS) {
-                col = 0;
-                y += CELL_H + 8;
-            } else {
-                x += CELL_W + 8;
-            }
-        }
-
-        // статус выбранного режима
-        gcUI.setFill(javafx.scene.paint.Color.LIGHTGREEN);
-        gcUI.setFont(javafx.scene.text.Font.font("Consolas", 14));
-        gcUI.fillText("Режим: " + placeMode, MENU_X + 12, y + 20);
+        menuPanel.renderUI(gcUI, placeMode);
     }
 }
